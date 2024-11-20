@@ -1,5 +1,7 @@
 import * as THREE from 'three';
 import * as CANNON from 'cannon-es';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import scifiCrateUrl from './static/models/Scifi Crate.glb';
 
 export class ObstacleSystem {
     constructor(scene, world, textures) {
@@ -7,9 +9,23 @@ export class ObstacleSystem {
         this.world = world;
         this.textures = textures;
         this.obstacles = [];
+        this.crateModel = null;
+        
+        // Load crate model
+        const loader = new GLTFLoader();
+        loader.load(scifiCrateUrl, (gltf) => {
+            this.crateModel = gltf.scene;
+            // Create initial crates once model is loaded
+            this.createDestructibleCrates();
+        });
     }
 
     createDestructibleCrates(count = 5) {
+        if (!this.crateModel) {
+            console.warn('Crate model not loaded yet');
+            return;
+        }
+
         for (let i = 0; i < count; i++) {
             const size = [1, 1, 1];
             const position = [
@@ -18,17 +34,12 @@ export class ObstacleSystem {
                 (Math.random() - 0.5) * 20
             ];
             
-            // Create mesh
-            const geometry = new THREE.BoxGeometry(...size);
-            const material = new THREE.MeshStandardMaterial({ 
-                map: this.textures.crate,
-                roughness: 0.7,
-                metalness: 0.3
-            });
-            const mesh = new THREE.Mesh(geometry, material);
-            mesh.position.set(...position);
-            mesh.castShadow = true;
-            mesh.receiveShadow = true;
+            // Clone the model for each crate
+            const crateMesh = this.crateModel.clone();
+            crateMesh.scale.set(2.5,2.5,2.5); // Adjust scale as needed
+            crateMesh.position.set(...position);
+            crateMesh.castShadow = true;
+            crateMesh.receiveShadow = true;
             
             // Create health bar
             const healthBarGeometry = new THREE.PlaneGeometry(1, 0.1);
@@ -42,7 +53,7 @@ export class ObstacleSystem {
 
             // Create container for obstacle
             const obstacleContainer = new THREE.Group();
-            obstacleContainer.add(mesh);
+            obstacleContainer.add(crateMesh);
             obstacleContainer.add(healthBar);
             
             // Create physics body
@@ -56,7 +67,7 @@ export class ObstacleSystem {
             
             // Store obstacle data
             const obstacleData = {
-                mesh: mesh,
+                mesh: crateMesh,
                 body: body,
                 healthBar: healthBar,
                 health: 100,

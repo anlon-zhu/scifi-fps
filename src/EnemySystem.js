@@ -1,5 +1,7 @@
 import * as THREE from 'three';
 import * as CANNON from 'cannon-es';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import turretUrl from './static/models/Turret Cannon.glb';
 
 export class EnemySystem {
     constructor(scene, world, player) {
@@ -8,56 +10,48 @@ export class EnemySystem {
         this.player = player;
         this.enemy = null;
         this.maxHealth = 100;
+        this.turretModel = null;
         
         // Shooting properties
         this.lastShotTime = 0;
         this.shotCooldown = 2000; // Fire every 2 seconds
         this.tracers = [];
         this.projectiles = [];
-        this.projectileSpeed = 40; // Units per second
+        this.projectileSpeed = 40;
         this.tracerMaterial = new THREE.LineBasicMaterial({ color: 0xff0000 });
         this.projectileMaterial = new THREE.MeshBasicMaterial({ color: 0xff0000 });
         this.projectileGeometry = new THREE.SphereGeometry(0.1, 8, 8);
         this.projectileDamage = 10;
 
-        // Spawn initial enemy
-        this.spawnEnemy();
+        // Load turret model
+        const loader = new GLTFLoader();
+        loader.load(turretUrl, (gltf) => {
+            this.turretModel = gltf.scene;
+            // Spawn initial enemy once model is loaded
+            this.spawnEnemy();
+        });
     }
 
     spawnEnemy() {
-        if (this.enemy) return;
+        if (this.enemy || !this.turretModel) return;
 
-        // Create turret base
-        const baseGeometry = new THREE.CylinderGeometry(1, 1, 0.5, 8);
-        const baseMaterial = new THREE.MeshPhongMaterial({ color: 0x666666 });
-        const baseMesh = new THREE.Mesh(baseGeometry, baseMaterial);
-        baseMesh.position.y = -0.75;
-
-        // Create turret top
-        const topGeometry = new THREE.BoxGeometry(0.8, 0.8, 1.2);
-        const topMaterial = new THREE.MeshPhongMaterial({ color: 0xff0000 });
-        const topMesh = new THREE.Mesh(topGeometry, topMaterial);
-        topMesh.position.y = 0;
-
-        // Create gun barrel
-        const barrelGeometry = new THREE.CylinderGeometry(0.1, 0.1, 1, 8);
-        const barrelMaterial = new THREE.MeshPhongMaterial({ color: 0x333333 });
-        const barrelMesh = new THREE.Mesh(barrelGeometry, barrelMaterial);
-        barrelMesh.rotation.x = Math.PI / 2;
-        barrelMesh.position.z = 0.8;
-        topMesh.add(barrelMesh);
-
-        // Create container
+        // Clone the turret model
+        const turretMesh = this.turretModel.clone();
+        turretMesh.scale.set(2.5,2.5, 2.5); // Adjust scale as needed
+        
+        // Create container for enemy
         const container = new THREE.Object3D();
-        container.position.set(-20, 1, -20); // Start at corner
-        container.add(baseMesh);
-        container.add(topMesh);
+        container.add(turretMesh);
 
+        // Position the turret
+        const position = new THREE.Vector3(-20, 0, -20);        
+        container.position.copy(position);
+        
         // Create health bar
         const healthBarGeometry = new THREE.PlaneGeometry(1, 0.1);
-        const healthBarMaterial = new THREE.MeshBasicMaterial({ 
+        const healthBarMaterial = new THREE.MeshBasicMaterial({
             color: 0x00ff00,
-            side: THREE.DoubleSide 
+            side: THREE.DoubleSide
         });
         const healthBar = new THREE.Mesh(healthBarGeometry, healthBarMaterial);
         healthBar.position.y = 1.5;
@@ -74,24 +68,23 @@ export class EnemySystem {
 
         this.world.addBody(body);
 
+        // Add to scene
+        this.scene.add(container);
+        
         // Store enemy data
         this.enemy = {
-            baseMesh,
-            topMesh,
-            container,
-            body,
-            healthBar,
+            container: container,
+            mesh: turretMesh,
+            healthBar: healthBar,
+            body: body,
             health: this.maxHealth,
+            position: position,
             muzzlePosition: new THREE.Vector3(0, 0, 1.3) // Store muzzle position for shooting
         };
-
-        // Add metadata for hit detection
-        topMesh.userData.type = 'enemy';
-        topMesh.userData.enemyData = this.enemy;
+        
+        // Add metadata
         container.userData.type = 'enemy';
         container.userData.enemyData = this.enemy;
-
-        this.scene.add(container);
     }
 
     shoot() {
@@ -102,7 +95,7 @@ export class EnemySystem {
         this.lastShotTime = currentTime;
 
         // Calculate shot direction based on player's current position
-        const startPos = this.enemy.container.position.clone().add(new THREE.Vector3(0, 0, 1.3));
+        const startPos = this.enemy.container.position.clone().add(new THREE.Vector3(0, 1, 0));
         const targetPos = this.player.camera.position.clone();
         const direction = new THREE.Vector3()
             .subVectors(targetPos, startPos)
@@ -236,7 +229,7 @@ export class EnemySystem {
             .normalize();
 
         // Update top mesh rotation to track player
-        this.enemy.topMesh.lookAt(
+        this.enemy.mesh.lookAt(
             this.enemy.container.position.clone().add(
                 new THREE.Vector3(direction.x, 0, direction.z)
             )
