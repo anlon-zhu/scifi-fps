@@ -50,7 +50,7 @@ export class EnvironmentSystem {
         // THREE.js ground mesh
         const groundGeometry = new THREE.PlaneGeometry(100, 100);
         const groundMaterial = new THREE.MeshStandardMaterial({ 
-            map: this.textures.ground,
+            // map: this.textures.ground,
             roughness: 0.8,
             metalness: 0.2
         });

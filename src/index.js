@@ -130,7 +130,7 @@ class FPSGame {
         console.log('Game handling player death');
         this.isGameOver = true;
         document.exitPointerLock();
-        this.uiSystem.showGameOver();
+        this.uiSystem.showGameOver(this.enemySystem.totalDestroyed);
     }
 
     startGame() {
@@ -142,6 +142,7 @@ class FPSGame {
         // Reset all systems
         this.playerSystem.reset();
         this.enemySystem.spawnEnemy();
+        this.enemySystem.totalDestroyed = 0;
         this.uiSystem.hideGameOver();
         
         // Re-enable pointer lock

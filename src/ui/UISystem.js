@@ -10,7 +10,7 @@ export class UISystem {
         this.createVolumeControl();
     }
 
-    showGameOver() {
+    showGameOver(destroyed) {
         if (this.isGameOverVisible) return;
         
         console.log('Showing game over screen');
@@ -19,6 +19,12 @@ export class UISystem {
         // Create and add game over screen
         const tempDiv = document.createElement('div');
         tempDiv.innerHTML = gameOverTemplate;
+        const destroyedText = document.createElement('p');
+        destroyedText.textContent = "Score: " + destroyed;
+
+        // Add destroyed count to game over screen
+        tempDiv.firstElementChild.appendChild(destroyedText);
+
         const gameOverScreen = tempDiv.firstElementChild;
         document.body.appendChild(gameOverScreen);
 

@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import * as CANNON from 'cannon-es';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import turretUrl from './static/models/Turret Cannon.glb';
+import bulletUrl from './static/models/Bullet.glb';
 
 export class EnemySystem {
     constructor(scene, world, player) {
@@ -11,6 +12,7 @@ export class EnemySystem {
         this.enemy = null;
         this.maxHealth = 100;
         this.turretModel = null;
+        this.totalDestroyed = 0;
         
         // Shooting properties
         this.lastShotTime = 0;
@@ -30,6 +32,11 @@ export class EnemySystem {
             // Spawn initial enemy once model is loaded
             this.spawnEnemy();
         });
+
+        // Load bullet model
+        loader.load(bulletUrl, (gltf) => {
+            this.bulletModel = gltf.scene;
+        });
     }
 
     spawnEnemy() {
@@ -43,8 +50,18 @@ export class EnemySystem {
         const container = new THREE.Object3D();
         container.add(turretMesh);
 
-        // Position the turret
-        const position = new THREE.Vector3(-20, 0, -20);        
+        function randomDistance() {
+            if (Math.random() < 0.5) {
+                // Choose a positive range (10 to 20)
+                return Math.random() * (20 - 10) + 10;
+            } else {
+                // Choose a negative range (-20 to -10)
+                return Math.random() * (-10 - -20) + -20;
+            }
+        }
+
+        // Position the 
+        const position = new THREE.Vector3(randomDistance(), 0, randomDistance());
         container.position.copy(position);
         
         // Create health bar
@@ -278,6 +295,9 @@ export class EnemySystem {
         
         // Remove physics body
         this.world.removeBody(this.enemy.body);
+
+        // Increment destroyed count
+        this.totalDestroyed++;
 
         // Clear reference
         this.enemy = null;

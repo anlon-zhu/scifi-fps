@@ -96,7 +96,7 @@ export class ObstacleSystem {
         wallPositions.forEach(wall => {
             const geometry = new THREE.BoxGeometry(...wall.size);
             const material = new THREE.MeshStandardMaterial({ 
-                map: this.textures.wall,
+                // map: this.textures.wall,
                 roughness: 0.8,
                 metalness: 0.2
             });
