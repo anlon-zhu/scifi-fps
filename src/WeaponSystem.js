@@ -21,6 +21,35 @@ export class WeaponSystem {
         this.isReloading = false;
         this.reloadCancelled = false;
 
+        // Animation system
+        this.mixer = null;
+        this.shootAction = null;
+        this.reloadAction = null;
+        this.lastAnimationTime = 0;
+
+        // Accuracy and recoil system
+        this.currentRecoil = 0;
+        this.lastShotTime = 0;
+        this.recoilConfig = {
+            maxSpread: 0.15,
+            spreadIncrement: 0.03,
+            resetDelay: 200,
+            recoveryRate: 0.95
+        };
+
+        // Shooting configuration
+        this.canShoot = true;
+        this.shootDelay = 100;
+
+        // Tracer system
+        this.activeTracers = [];
+        this.tracerMaterial = new THREE.LineBasicMaterial({ 
+            color: 0xffff00,
+            transparent: true,
+            opacity: 0.5
+        });
+        this.tracerDuration = 50; // ms
+
         // Hit effects system
         this.hitEffects = new Map();
         this.hitEffectConfig = {
@@ -30,45 +59,9 @@ export class WeaponSystem {
             duration: 100 // ms
         };
 
-        // Recoil and accuracy configuration
-        this.recoilConfig = {
-            // Visual recoil
-            positionAmount: 0.1,      // How far the gun moves back
-            heightAmount: 0.05,       // How far the gun moves up
-            rotationAmount: 0.1,      // How much the gun rotates
-            recoverySpeed: 8,         // Speed of visual and accuracy recovery (higher = faster)
-            
-            // Accuracy and spread
-            spreadIncrement: 0.1,     // How much spread increases per shot
-            maxSpread: 0.3,          // Maximum possible spread
-            horizontalRatio: 0.15,    // Horizontal spread ratio
-            
-            // Timing
-            resetDelay: 400,         // Ms before recovery starts
-            minRecoveryThreshold: 0.01 // Minimum value before snapping to 0
-        };
-
-        // Runtime states
-        this.currentRecoil = 0;
-        this.lastShotTime = 0;
-        this.baseGunPosition = null;
-        this.baseGunRotation = null;
-        this.isRecovering = false;
-        this.canShoot = true;
-        this.shootDelay = 100;
-
-        // Animation mixer
-        this.mixer = null;
-        this.shootAction = null;
-        this.reloadAction = null;
-
-        // Tracer system
-        this.activeTracers = [];
-        this.tracerMaterial = new THREE.LineBasicMaterial({ 
-            color: 0xffff00,
-            transparent: true,
-            opacity: 0.7
-        });
+        // Muzzle position helper
+        this.muzzleWorldPosition = new THREE.Vector3();
+        this.muzzleLocalPosition = new THREE.Vector3(2.25, 2, 2.25);
 
         // Initialize weapon systems
         this.setupWeapon();
@@ -86,11 +79,25 @@ export class WeaponSystem {
                 // Setup animations
                 this.mixer = new THREE.AnimationMixer(this.gun);
                 const animations = gltf.animations;
+                
+                // Debug animation names
+                console.log('Available animations:', animations.map(a => a.name));
+                
                 if (animations && animations.length > 0) {
-                    // Assuming animations[0] is shoot and animations[1] is reload
-                    this.shootAction = this.mixer.clipAction(animations[0]);
-                    if (animations.length > 1) {
-                        this.reloadAction = this.mixer.clipAction(animations[1]);
+                    // Find shoot animation by name
+                    const shootAnim = animations.find(a => a.name.toLowerCase().includes('shoot'));
+                    if (shootAnim) {
+                        this.shootAction = this.mixer.clipAction(shootAnim);
+                        this.shootAction.setLoop(THREE.LoopOnce);
+                        this.shootAction.clampWhenFinished = true;
+                    }
+                    
+                    // Find reload animation by name
+                    const reloadAnim = animations.find(a => a.name.toLowerCase().includes('reload'));
+                    if (reloadAnim) {
+                        this.reloadAction = this.mixer.clipAction(reloadAnim);
+                        this.reloadAction.setLoop(THREE.LoopOnce);
+                        this.reloadAction.clampWhenFinished = true;
                     }
                 }
 
@@ -99,43 +106,18 @@ export class WeaponSystem {
                 this.gun.position.set(0, -0.4, -0.6);
                 this.gun.rotation.set(0, -Math.PI * 1.5, 0);
 
-                // Log the model structure to help debug
-                console.log('Model structure:', this.gun);
-                
-                // Log gun's position in different coordinate spaces
-                const worldPos = new THREE.Vector3();
-                this.gun.getWorldPosition(worldPos);
-                console.log('Gun positions:', {
-                    local: this.gun.position.clone(),
-                    world: worldPos,
-                    cameraSpace: this.camera.worldToLocal(worldPos.clone())
-                });
-                
-                this.gun.traverse((child) => {
-                    console.log('Child:', child.name, child.type);
-                    if (child.type === 'Mesh') {
-                        const meshWorldPos = new THREE.Vector3();
-                        child.getWorldPosition(meshWorldPos);
-                        console.log(`Mesh ${child.name} world position:`, meshWorldPos);
-                    }
-                });
-
                 // Add gun to camera
                 this.camera.add(this.gun);
 
-                // Store the initial position and rotation
-                this.baseGunPosition = this.gun.position.clone();
-                this.baseGunRotation = this.gun.rotation.clone();
-
                 console.log('FPS Rig loaded successfully');
+
+                // Start animation system
+                this.lastAnimationTime = performance.now();
+                this.animate();
             },
-            // Progress callback
-            (xhr) => {
-                console.log((xhr.loaded / xhr.total * 100) + '% loaded');
-            },
-            // Error callback
+            undefined,
             (error) => {
-                console.error('Error loading FPS Rig:', error);
+                console.error('Error loading weapon model:', error);
             }
         );
 
@@ -152,6 +134,18 @@ export class WeaponSystem {
                 this.reload();
             }
         });
+    }
+
+    animate() {
+        requestAnimationFrame(() => this.animate());
+        
+        const currentTime = performance.now();
+        const deltaTime = (currentTime - this.lastAnimationTime) / 1000;
+        this.lastAnimationTime = currentTime;
+        
+        if (this.mixer) {
+            this.mixer.update(deltaTime);
+        }
     }
 
     createAmmoDisplay() {
@@ -184,20 +178,20 @@ export class WeaponSystem {
     }
 
     update(currentTime) {
-        // Update animation mixer
-        if (this.mixer) {
-            this.mixer.update(currentTime / 1000); // Convert to seconds
-        }
-
         // Update tracers
         this.updateTracers(currentTime);
         
         // Update hit effects
         this.updateHitEffects(currentTime);
+
+        // Update recoil recovery
+        if (currentTime - this.lastShotTime > this.recoilConfig.resetDelay) {
+            this.currentRecoil *= this.recoilConfig.recoveryRate;
+        }
     }
 
     updateTracers(currentTime) {
-        const tracerDuration = 100; // Tracer visible for 100ms
+        const tracerDuration = this.tracerDuration; // Tracer visible for 50ms
         
         this.activeTracers = this.activeTracers.filter(tracer => {
             const age = currentTime - tracer.creationTime;
@@ -210,7 +204,7 @@ export class WeaponSystem {
             
             // Fade out tracer
             const opacity = 1 - (age / tracerDuration);
-            tracer.line.material.opacity = opacity * 0.7;
+            tracer.line.material.opacity = opacity * 0.5;
             
             return true;
         });
@@ -271,6 +265,9 @@ export class WeaponSystem {
             this.reloadCancelled = true;
             this.isReloading = false;
         }
+
+        // Play audio
+        this.audioSystem.play('shoot');
         
         // Decrease ammo
         this.currentAmmo--;
@@ -281,51 +278,73 @@ export class WeaponSystem {
             this.reload();
         }
 
-        // Apply recoil and update accuracy
-        this.applyRecoil();
-        
-        // Calculate current accuracy spread based on recoil
+        // Update recoil
         const currentTime = performance.now();
-        const timeSinceLastShot = currentTime - this.lastShotTime;
-        
-        if (timeSinceLastShot < this.recoilConfig.resetDelay) {
+        if (currentTime - this.lastShotTime < this.recoilConfig.resetDelay) {
             this.currentRecoil = Math.min(
                 this.recoilConfig.maxSpread,
                 this.currentRecoil + this.recoilConfig.spreadIncrement
             );
         }
         
-        // Calculate spread based on current recoil
-        const spread = this.currentRecoil;
-        
-        // Calculate ray from camera with spread
+        // First, raycast from camera/crosshair for hit detection
         const raycaster = new THREE.Raycaster();
-        const center = new THREE.Vector2(
-            (Math.random() - 0.5) * spread * this.recoilConfig.horizontalRatio,
-            (Math.random() * spread)
-        );
-        raycaster.setFromCamera(center, this.camera);
+        const direction = new THREE.Vector3(0, 0, -1);
         
-        // Update last shot time
-        this.lastShotTime = currentTime;
+        // Apply spread to direction
+        if (this.currentRecoil > 0) {
+            const spread = this.currentRecoil;
+            direction.x += (Math.random() - 0.5) * spread;
+            direction.y += (Math.random()) * spread;
+            direction.normalize();
+        }
+        
+        direction.applyQuaternion(this.camera.quaternion);
+        
+        // Start raycast from camera position
+        raycaster.set(this.camera.position, direction);
+        
+        // Check for hits
+        const intersects = raycaster.intersectObjects(this.scene.children, true);
+        
+        // Get hit point or default to far distance
+        let hitPoint;
+        if (intersects.length > 0) {
+            const hit = intersects[0];
+            hitPoint = hit.point;
+            
+            // Find the container object with userData
+            let targetObject = hit.object;
+            while (targetObject && !targetObject.userData?.type) {
+                targetObject = targetObject.parent;
+            }
+            
+            if (targetObject) {
+                this.onHit?.(hitPoint, targetObject);
+            }
+        } else {
+            // If no hit, extend to far distance
+            hitPoint = this.camera.position.clone().add(direction.multiplyScalar(100));
+        }
 
-        // Get gun muzzle position (slightly in front of gun model)
+        // Now create tracer from muzzle to hit point
         if (!this.gun) return;
-        const muzzlePosition = new THREE.Vector3();
-        this.gun.getWorldPosition(muzzlePosition);
         
-        // Calculate offset in camera's direction
-        const muzzleOffset = new THREE.Vector3(0, 0, 0.9);
-        muzzleOffset.applyQuaternion(this.camera.quaternion);
-        muzzleOffset.multiplyScalar(0.4);
-        muzzlePosition.add(muzzleOffset);
-
-        // Log shooting positions
-        console.log('Shooting positions:', {
-            muzzle: muzzlePosition.clone(),
-            camera: this.camera.position.clone(),
-            gun: this.gun.getWorldPosition(new THREE.Vector3()),
-            cameraDirection: this.camera.getWorldDirection(new THREE.Vector3())
+        // Calculate muzzle world position
+        this.muzzleWorldPosition.copy(this.muzzleLocalPosition);
+        this.gun.localToWorld(this.muzzleWorldPosition);
+        
+        // Create tracer effect from muzzle to hit point
+        const tracerGeometry = new THREE.BufferGeometry().setFromPoints([
+            this.muzzleWorldPosition,
+            hitPoint
+        ]);
+        
+        const tracerLine = new THREE.Line(tracerGeometry, this.tracerMaterial);
+        this.scene.add(tracerLine);
+        this.activeTracers.push({
+            line: tracerLine,
+            creationTime: performance.now()
         });
 
         // Handle shooting cooldown
@@ -334,163 +353,8 @@ export class WeaponSystem {
             this.canShoot = true;
         }, this.shootDelay);
 
-        // Find all intersections with scene objects
-        const intersects = raycaster.intersectObjects(this.scene.children, true);
-        
-        let hitPoint = null;
-        let hitObstacle = null;
-        
-        if (intersects.length > 0) {
-            const hit = intersects[0];
-            hitPoint = hit.point;
-
-            // Find the obstacle by traversing up the parent hierarchy
-            let currentObject = hit.object;
-            while (currentObject) {
-                if (currentObject.userData && currentObject.userData.type === 'obstacle') {
-                    hitObstacle = currentObject.userData.obstacleData;
-                    break;
-                }
-                currentObject = currentObject.parent;
-            }
-        }
-
-        console.log('Raycast intersections:', intersects.length);
-
-        if (intersects.length > 0) {
-            const hit = intersects[0];
-            console.log('Hit object:', hit.object);
-            console.log('Hit object userData:', hit.object.userData);
-
-            // Find the root object (container) that has the enemy data
-            let targetObject = hit.object;
-            while (targetObject.parent && !targetObject.userData.type) {
-                targetObject = targetObject.parent;
-            }
-            console.log('Target object:', targetObject);
-            console.log('Target object userData:', targetObject.userData);
-
-            // Call onHit with the root object
-            if (this.onHit) {
-                this.onHit(hit.point, targetObject);
-            }
-
-            // Create visual tracer
-            if (hitPoint) {
-                // Create tracer to hit point
-                const tracerGeometry = new THREE.BufferGeometry().setFromPoints([
-                    muzzlePosition,
-                    hitPoint
-                ]);
-                const tracer = new THREE.Line(tracerGeometry, this.tracerMaterial);
-                this.scene.add(tracer);
-                
-                this.activeTracers.push({
-                    line: tracer,
-                    creationTime: performance.now()
-                });
-            } else {
-                // If no hit, extend tracer to a reasonable distance
-                const farPoint = raycaster.ray.direction.clone();
-                farPoint.multiplyScalar(1000);
-                farPoint.add(muzzlePosition);
-                
-                const tracerGeometry = new THREE.BufferGeometry().setFromPoints([
-                    muzzlePosition,
-                    farPoint
-                ]);
-                const tracer = new THREE.Line(tracerGeometry, this.tracerMaterial);
-                this.scene.add(tracer);
-                
-                this.activeTracers.push({
-                    line: tracer,
-                    creationTime: performance.now()
-                });
-            }
-        }
-        
-        // Play shooting sound
-        this.audioSystem.play('shoot');
-    }
-
-    applyRecoil() {
-        if (!this.gun || !this.baseGunPosition || !this.baseGunRotation) return;
-
-        // If already recovering, don't start a new recoil
-        if (this.isRecovering) {
-            // Add additional recoil to current position
-            this.gun.position.z += this.recoilConfig.positionAmount * 0.5;
-            this.gun.position.y += this.recoilConfig.heightAmount * 0.5;
-            this.gun.rotation.x += this.recoilConfig.rotationAmount * 0.5;
-            return;
-        }
-
-        this.isRecovering = true;
-        
-        // Apply immediate recoil relative to base position
-        this.gun.position.z = this.baseGunPosition.z + this.recoilConfig.positionAmount;
-        this.gun.position.y = this.baseGunPosition.y + this.recoilConfig.heightAmount;
-        this.gun.rotation.x = this.baseGunRotation.x + this.recoilConfig.rotationAmount;
-        
-        // Smooth recovery animation
-        const animate = () => {
-            if (!this.gun) return;
-            
-            const delta = 1.0 / 60;
-            const recovery = this.recoilConfig.recoverySpeed * delta;
-            
-            // Recover position and rotation towards base position
-            this.gun.position.z = THREE.MathUtils.lerp(
-                this.gun.position.z,
-                this.baseGunPosition.z,
-                recovery
-            );
-            this.gun.position.y = THREE.MathUtils.lerp(
-                this.gun.position.y,
-                this.baseGunPosition.y,
-                recovery
-            );
-            this.gun.rotation.x = THREE.MathUtils.lerp(
-                this.gun.rotation.x,
-                this.baseGunRotation.x,
-                recovery
-            );
-            
-            // Recover accuracy over time
-            if (performance.now() - this.lastShotTime > this.recoilConfig.resetDelay) {
-                this.currentRecoil = THREE.MathUtils.lerp(
-                    this.currentRecoil,
-                    0,
-                    recovery
-                );
-                
-                if (this.currentRecoil < this.recoilConfig.minRecoveryThreshold) {
-                    this.currentRecoil = 0;
-                }
-            }
-            
-            // Check if fully recovered
-            const posZDiff = Math.abs(this.gun.position.z - this.baseGunPosition.z);
-            const posYDiff = Math.abs(this.gun.position.y - this.baseGunPosition.y);
-            const rotXDiff = Math.abs(this.gun.rotation.x - this.baseGunRotation.x);
-            
-            if (
-                posZDiff <= this.recoilConfig.minRecoveryThreshold &&
-                posYDiff <= this.recoilConfig.minRecoveryThreshold &&
-                rotXDiff <= this.recoilConfig.minRecoveryThreshold &&
-                this.currentRecoil <= 0
-            ) {
-                // Snap to exact base position
-                this.gun.position.copy(this.baseGunPosition);
-                this.gun.rotation.copy(this.baseGunRotation);
-                this.isRecovering = false;
-            } else {
-                requestAnimationFrame(animate);
-            }
-        };
-        
-        // Start recovery animation
-        requestAnimationFrame(animate);
+        // Update last shot time
+        this.lastShotTime = currentTime;
     }
 
     reload() {
@@ -500,14 +364,6 @@ export class WeaponSystem {
         if (this.reloadAction) {
             this.reloadAction.reset();
             this.reloadAction.play();
-        }
-
-        // Cancel recoil recovery if in progress
-        if (this.isRecovering) {
-            this.isRecovering = false;
-            // Reset gun position to base position before starting reload
-            this.gun.position.copy(this.baseGunPosition);
-            this.gun.rotation.copy(this.baseGunRotation);
         }
 
         this.isReloading = true;
