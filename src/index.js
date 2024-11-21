@@ -13,7 +13,10 @@ class FPSGame {
         this.camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
         this.camera.position.set(0, 5, 0);
         this.scene.add(this.camera);
-
+        
+        // Set camera reference on scene
+        this.scene.camera = this.camera;
+        
         this.isGameOver = false;
 
         // Setup renderer
@@ -94,10 +97,14 @@ class FPSGame {
         this.scene.weaponSystem = this.weaponSystem;
         this.weaponSystem.onHit = (hitPoint, target) => {
             if (target && target.userData) {
-                if (target.userData.type === 'obstacle' && target.userData.obstacleData && target.userData.obstacleData.destructible) {
-                    this.obstacleSystem.updateObstacleHealth(target.userData.obstacleData, target.userData.obstacleData.health - 25);
-                } else if (target.userData.type === 'enemy' && target.userData.enemyData) {
-                    this.enemySystem.updateEnemyHealth(target.userData.enemyData, target.userData.enemyData.health - 25);
+                const mesh = target.parent || target; // Get the parent if it exists (for grouped objects)
+                
+                // Find the entity that owns this mesh
+                const entity = [...this.obstacleSystem.obstacles, ...this.enemySystem.getEnemies()]
+                    .find(obj => obj.mesh === mesh);
+                
+                if (entity && typeof entity.takeDamage === 'function') {
+                    entity.takeDamage(25); // Apply 25 damage
                 }
             }
             this.weaponSystem.handleHit(hitPoint, target);
@@ -106,7 +113,7 @@ class FPSGame {
         this.playerSystem = new PlayerSystem(this.scene, this.camera, this.world);
         this.scene.playerSystem = this.playerSystem;
         
-        this.obstacleSystem = new ObstacleSystem(this.scene, this.world, this.textures);
+        this.obstacleSystem = new ObstacleSystem(this.scene, this.world);
         this.obstacleSystem.createDestructibleCrates();
         this.obstacleSystem.createWalls();
         
@@ -167,7 +174,7 @@ class FPSGame {
 
         // Update all systems
         this.playerSystem.update();
-        this.obstacleSystem.updateObstacles();
+        this.obstacleSystem.update();
         this.enemySystem.update(deltaTime);
         this.weaponSystem.update(currentTime);
 

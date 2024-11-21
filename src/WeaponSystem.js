@@ -157,7 +157,7 @@ export class WeaponSystem {
         ammoContainer.style.fontFamily = 'Arial, sans-serif';
         ammoContainer.style.fontSize = '24px';
         ammoContainer.style.padding = '10px';
-        ammoContainer.style.background = 'rgba(0, 0, 0, 0.5)';
+        // ammoContainer.style.background = 'rgba(0, 0, 0, 0.5)';
         ammoContainer.style.borderRadius = '5px';
         ammoContainer.style.userSelect = 'none';
         this.ammoDisplay = ammoContainer;
@@ -234,51 +234,27 @@ export class WeaponSystem {
         this.hitEffects.set(hitEffect, performance.now());
     }
 
-    handleHit(hitPoint, target) {
-        // Create hit effect
-        this.createHitEffect(hitPoint);
-
-        // Handle damage
-        if (target && target.userData) {
-            if (target.userData.type === 'obstacle' && 
-                target.userData.obstacleData && 
-                target.userData.obstacleData.destructible) {
-                target.userData.obstacleData.health -= 25;
-            } else if (target.userData.type === 'enemy' && 
-                      target.userData.enemyData) {
-                target.userData.enemyData.health -= 25;
-            }
-        }
-    }
-
     shoot() {
         if (!this.canShoot || this.isReloading || this.currentAmmo <= 0) return;
         
-        // Play shoot animation if available
         if (this.shootAction) {
             this.shootAction.reset();
             this.shootAction.play();
         }
 
-        // Cancel reload if in progress
         if (this.isReloading) {
             this.reloadCancelled = true;
             this.isReloading = false;
         }
 
-        // Play audio
         this.audioSystem.play('shoot');
-        
-        // Decrease ammo
         this.currentAmmo--;
         this.updateAmmoDisplay();
         
-        // Auto-reload when empty
         if (this.currentAmmo === 0 && this.reserveAmmo > 0) {
             this.reload();
         }
 
-        // Update recoil
         const currentTime = performance.now();
         if (currentTime - this.lastShotTime < this.recoilConfig.resetDelay) {
             this.currentRecoil = Math.min(
@@ -287,11 +263,10 @@ export class WeaponSystem {
             );
         }
         
-        // First, raycast from camera/crosshair for hit detection
+        // Raycast from camera
         const raycaster = new THREE.Raycaster();
         const direction = new THREE.Vector3(0, 0, -1);
         
-        // Apply spread to direction
         if (this.currentRecoil > 0) {
             const spread = this.currentRecoil;
             direction.x += (Math.random() - 0.5) * spread;
@@ -300,41 +275,70 @@ export class WeaponSystem {
         }
         
         direction.applyQuaternion(this.camera.quaternion);
-        
-        // Start raycast from camera position
         raycaster.set(this.camera.position, direction);
         
-        // Check for hits
         const intersects = raycaster.intersectObjects(this.scene.children, true);
         
-        // Get hit point or default to far distance
         let hitPoint;
         if (intersects.length > 0) {
             const hit = intersects[0];
             hitPoint = hit.point;
             
-            // Find the container object with userData
-            let targetObject = hit.object;
-            while (targetObject && !targetObject.userData?.type) {
-                targetObject = targetObject.parent;
+            // Find the destructible entity
+            let hitObject = hit.object;
+            let foundEntity = null;
+
+            console.log('[HIT] Initial hit:', {
+                name: hitObject.name,
+                type: hitObject.constructor.name,
+                hasUserData: !!hitObject.userData,
+                hasEntity: !!hitObject.userData?.entity
+            });
+
+            // First check the direct hit object
+            if (hitObject.userData?.entity?.takeDamage) {
+                foundEntity = hitObject.userData.entity;
+                console.log('[HIT] Found entity on direct hit');
+            } else {
+                // Walk up the parent chain looking for an entity reference
+                while (hitObject && !foundEntity) {
+                    console.log('[HIT] Checking parent:', {
+                        name: hitObject.name,
+                        type: hitObject.constructor.name,
+                        hasEntity: !!hitObject.userData?.entity
+                    });
+
+                    if (hitObject.userData?.entity?.takeDamage) {
+                        foundEntity = hitObject.userData.entity;
+                        console.log('[HIT] Found entity on parent');
+                        break;
+                    }
+                    hitObject = hitObject.parent;
+                }
             }
-            
-            if (targetObject) {
-                this.onHit?.(hitPoint, targetObject);
+
+            // If we found an entity, deal damage
+            if (foundEntity) {
+                console.log('[HIT] Applying damage to:', {
+                    type: foundEntity.constructor.name,
+                    health: foundEntity.currentHealth
+                });
+                foundEntity.takeDamage(25);
+            } else {
+                console.log('[HIT] No entity found on hit object or parents');
             }
+
+            this.createHitEffect(hitPoint);
         } else {
-            // If no hit, extend to far distance
             hitPoint = this.camera.position.clone().add(direction.multiplyScalar(100));
         }
 
-        // Now create tracer from muzzle to hit point
+        // Create tracer effect
         if (!this.gun) return;
         
-        // Calculate muzzle world position
         this.muzzleWorldPosition.copy(this.muzzleLocalPosition);
         this.gun.localToWorld(this.muzzleWorldPosition);
         
-        // Create tracer effect from muzzle to hit point
         const tracerGeometry = new THREE.BufferGeometry().setFromPoints([
             this.muzzleWorldPosition,
             hitPoint
@@ -347,13 +351,11 @@ export class WeaponSystem {
             creationTime: performance.now()
         });
 
-        // Handle shooting cooldown
         this.canShoot = false;
         setTimeout(() => {
             this.canShoot = true;
         }, this.shootDelay);
 
-        // Update last shot time
         this.lastShotTime = currentTime;
     }
 
