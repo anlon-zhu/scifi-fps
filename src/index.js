@@ -95,6 +95,15 @@ class FPSGame {
         // Initialize systems
         this.weaponSystem = new WeaponSystem(this.scene, this.camera, this.audioSystem);
         this.scene.weaponSystem = this.weaponSystem;
+        
+        // Initialize player system after weapon system
+        this.playerSystem = new PlayerSystem(this.scene, this.camera, this.world);
+        
+        // Initialize other systems
+        this.obstacleSystem = new ObstacleSystem(this.scene, this.world, this.textures);
+        this.enemySystem = new EnemySystem(this.scene, this.world, this.playerSystem);
+        this.uiSystem = new UISystem(this.scene);
+        this.scene.playerSystem = this.playerSystem;
         this.weaponSystem.onHit = (hitPoint, target) => {
             if (target && target.userData) {
                 const mesh = target.parent || target; // Get the parent if it exists (for grouped objects)
@@ -110,14 +119,10 @@ class FPSGame {
             this.weaponSystem.handleHit(hitPoint, target);
         };
 
-        this.playerSystem = new PlayerSystem(this.scene, this.camera, this.world);
-        this.scene.playerSystem = this.playerSystem;
-        
-        this.obstacleSystem = new ObstacleSystem(this.scene, this.world);
         this.obstacleSystem.createDestructibleCrates();
         this.obstacleSystem.createWalls();
         
-        this.enemySystem = new EnemySystem(this.scene, this.world, this.playerSystem);
+        this.enemySystem.spawnEnemy();
         this.uiSystem = new UISystem(this);
 
         // Lock mouse pointer
